@@ -247,7 +247,7 @@ function vExportar() {
     $('#lerr').textContent = '';
     try { await fb.login($('#mail').value.trim(), $('#pass').value); } catch (e) { $('#lerr').textContent = 'Correo o contraseña incorrectos.'; }
   };
-  $('#entrar').onclick = entrar; $('#pass').onkeydown = e => e.key === 'Enter' && entrar();
+  $('#entrar').onclick = entrar; $('#pass').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
   $('#olvide').onclick = async () => { const m = $('#mail').value.trim(); if (!m) return $('#lerr').textContent = 'Escribí tu correo arriba y volvé a tocar.'; try { await fb.reset(m); $('#lerr').textContent = 'Si el correo existe, te enviamos un mensaje para crear una clave nueva.'; } catch (e) { $('#lerr').textContent = 'No pude enviarlo.'; } };
   $('#salir').onclick = () => fb.logout();
 })();
