@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Seguimiento de Presupuesto</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6f2;--card:#fff;--text:#1d261f;--soft:#66736a;--line:#dbe2d8;--brand:#2f6b3a;--brand-d:#1f4a28;--earth:#a8742f;--red:#c0392b;--amb:#c58a00;--ok:#2f8f46;--hl:#fff4c2}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121712;--card:#1b231c;--text:#e7ede8;--soft:#9aa89d;--line:#2d3a2f;--brand:#5fae6c;--brand-d:#16301b;--earth:#d09a52;--red:#e8675a;--amb:#e0a92c;--ok:#4cb866;--hl:#4a4113}}
+:root[data-theme="dark"]{--bg:#121712;--card:#1b231c;--text:#e7ede8;--soft:#9aa89d;--line:#2d3a2f;--brand:#5fae6c;--brand-d:#16301b;--earth:#d09a52;--red:#e8675a;--amb:#e0a92c;--ok:#4cb866;--hl:#4a4113}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 'Open Sans',system-ui,sans-serif}
+h1,h2,h3,th,.kpi b,button{font-family:'Montserrat',system-ui,sans-serif}
+h1{font-size:18px;margin:0}h3{margin:0 0 8px;font-size:15px}
+header{background:var(--brand-d);color:#fff;padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+header h1{flex:1;min-width:180px}
+header label{font-size:12px;opacity:.85;display:flex;align-items:center;gap:6px;margin:0;color:#fff}
+header input{width:64px;padding:4px 6px}
+.note{background:var(--hl);color:var(--text);padding:8px 16px;font-size:13px}
+nav{display:flex;gap:2px;padding:8px 12px 0;overflow-x:auto}
+nav button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 12px;color:var(--soft);cursor:pointer;font-size:14px;white-space:nowrap}
+nav button.on{color:var(--brand);border-color:var(--brand)}
+main{max-width:1100px;margin:auto;padding:14px 16px 40px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+.kpi small{display:block;color:var(--soft)}.kpi b{font-size:19px}
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+label{display:block;font-size:12px;color:var(--soft);margin-top:8px}
+input,select,textarea{font:inherit;width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--text)}
+input.hl,select.hl{background:var(--hl)}
+button.p{background:var(--brand);color:#fff;border:0;border-radius:6px;padding:9px 16px;margin-top:12px;cursor:pointer}
+button.p:disabled{opacity:.5}
+button.s{background:none;border:1px solid var(--line);border-radius:6px;padding:4px 9px;color:var(--soft);cursor:pointer;font-size:12px}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.n{text-align:right;white-space:nowrap}
+.tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;color:#fff;white-space:nowrap}
+.t-ok{background:var(--ok)}.t-w{background:var(--amb)}.t-r{background:var(--red)}.t-g{background:var(--soft)}
+.msg{font-size:13px;margin-top:8px;min-height:18px;color:var(--soft)}.msg.e{color:var(--red)}
+.hide{display:none}.soft{color:var(--soft)}
+img.prev{max-width:240px;max-height:200px;border-radius:6px;margin-top:8px;border:1px solid var(--line)}
+canvas{max-height:300px}
+</style>
+</head>
+<body>
+<div id="login" class="hide" style="max-width:360px;margin:12vh auto;padding:0 16px"><div class="card">
+  <h2 style="margin:0 0 4px;font-family:Montserrat,sans-serif">Seguimiento de presupuesto</h2><p class="soft" style="margin:0 0 6px">Ingresá con tu correo y contraseña</p>
+  <label>Correo</label><input id="mail" type="email" autocomplete="username"><label>Contraseña</label><input id="pass" type="password" autocomplete="current-password">
+  <div class="msg e" id="lerr"></div><button class="p" id="entrar" style="width:100%">Ingresar</button>
+  <p style="text-align:center;margin:12px 0 0"><button class="s" id="olvide">Olvidé mi contraseña</button></p></div></div>
+<div id="app" class="hide">
+<header><h1>Seguimiento de presupuesto</h1><label>Moneda <input id="mon" value="$" maxlength="6"></label><span id="quien" style="font-size:13px"></span><button class="s" id="salir" style="color:#fff;border-color:#fff8">Salir</button></header>
+<div id="aviso" class="note hide"></div>
+<nav id="tabs"></nav>
+<main id="vista"></main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
