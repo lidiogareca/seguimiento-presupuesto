@@ -178,13 +178,26 @@ async function reducir(file) { // achica la foto para que viaje rápido (máx. 1
   return new Promise(r => c.toBlob(r, 'image/jpeg', .85));
 }
 function cargarScript(u) { return new Promise((ok, no) => { const t = document.createElement('script'); t.src = u; t.onload = ok; t.onerror = no; document.head.appendChild(t); }); }
-function interpretar(txt) { // saca fecha, monto, proveedor y nro de un texto leído (se puede cambiar por una IA más adelante)
-  const L = txt.split('\n').map(l => l.trim()).filter(Boolean), o = {};
+function interpretar(txt) { // saca fecha, monto, proveedor, nro y descripción de un texto leído (lee bien las fichas generadas: Fecha / Nro / Descripción / Total)
+  const L = txt.split('\n').map(l => l.trim()).filter(Boolean), o = {}, nol = s => /^no legible\.?$/i.test((s || '').trim());
   const m = txt.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/); if (m) o.fecha = fechaISO(`${m[1]}/${m[2]}/${m[3]}`);
-  const n = txt.match(/(?:n[°º]|nro\.?|n[úu]mero|recibo|factura)\s*[:.]?\s*(\d{3,})/i); if (n) o.nro = n[1];
+  const nl = L.map(l => l.match(/^n[°º]?r?o?\.?\s*:\s*(\S.*)$/i)).find(Boolean);
+  if (nl) { if (!nol(nl[1])) o.nro = nl[1].replace(/\s+/g, '').slice(0, 30); }
+  else { const n = txt.match(/(?:n[°º]|nro\.?|n[úu]mero|recibo|factura)\s*[:.]?\s*(\d{3,})/i); if (n) o.nro = n[1]; }
+  const dI = L.findIndex(l => /^descripc\S*\s*:/i.test(l));
+  if (dI >= 0) { // la descripción puede ocupar varias líneas, hasta la línea del total
+    const tI = L.findIndex((l, i) => i > dI && /^total\b/i.test(l));
+    const d = L.slice(dI, tI > dI ? tI : dI + 1).join(' ').replace(/^descripc\S*\s*:\s*/i, '').trim();
+    if (d && !nol(d)) o.desc = d.slice(0, 150);
+  }
   const nums = l => (l.match(/\d[\d.,]*\d|\d/g) || []).map(num).filter(v => v > 0 && v < 1e8);
-  let t = L.filter(l => /total|importe|monto|son\b/i.test(l)).flatMap(nums); if (!t.length) t = L.flatMap(nums); if (t.length) o.monto = Math.max(...t);
-  const v = L.find(l => (l.match(/[A-Za-zÁÉÍÓÚáéíóúñÑ]/g) || []).length >= 4); if (v) o.proveedor = v.slice(0, 60);
+  const tl = L.filter(l => /^total\b/i.test(l));
+  let t;
+  if (tl.length) t = tl.flatMap(nums); // si hay línea "Total", solo se usa esa: si está vacía, el monto queda vacío
+  else { t = L.filter(l => /total|importe|monto|son\b/i.test(l)).flatMap(nums); if (!t.length) t = L.flatMap(nums); }
+  if (t.length) o.monto = Math.max(...t);
+  const v = L.find(l => !/^(fecha|n[°º]?r?o?\.?|descripc\S*|total)\s*:/i.test(l) && !nol(l.replace(/^proveedor\s*:\s*/i, '')) && (l.match(/[A-Za-zÁÉÍÓÚáéíóúñÑ]/g) || []).length >= 4);
+  if (v) o.proveedor = v.replace(/^proveedor\s*:\s*/i, '').slice(0, 60);
   return o;
 }
 async function leerFoto(e) {
@@ -194,9 +207,10 @@ async function leerFoto(e) {
     if (!window.Tesseract) await cargarScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
     const r = await Promise.race([window.Tesseract.recognize(f, 'spa'), new Promise((_, no) => setTimeout(() => no(new Error('t')), 90000))]);
     const d = interpretar(r.data.text);
-    const put = (k, v) => { if (v) { $(k).value = v; $(k).classList.add('hl'); return 1; } return 0; };
-    const n = put('#gf', d.fecha) + put('#gm', d.monto) + put('#gp', d.proveedor) + put('#gn', d.nro);
-    msg('#lect', `Lectura básica: completé ${n} campos (en amarillo). Revisá todo: con letra manuscrita se equivoca seguido. Falta elegir el ítem.`);
+    const put = (k, v) => { $(k).value = v || ''; $(k).classList.toggle('hl', !!v); return v ? 1 : 0; }; // si la foto no trae el dato, el campo queda vacío (nunca se arrastra el de la ficha anterior)
+    const n = put('#gf', d.fecha) + put('#gd', d.desc) + put('#gm', d.monto) + put('#gp', d.proveedor) + put('#gn', d.nro);
+    const faltan = 5 - n;
+    msg('#lect', `Lectura básica: completé ${n} de 5 campos (en amarillo)${faltan ? '; los que quedaron vacíos no se leyeron: completalos' : ''}. Revisá todo y elegí el ítem.`);
   } catch (err) { msg('#lect', 'No pude leer la foto. Cargá los datos a mano.', 1); }
 }
 
