@@ -6,7 +6,7 @@ const fmt = n => MON + ' ' + Math.round(n || 0).toLocaleString('es-AR');
 const pct = n => (isFinite(n) ? n : 0).toFixed(0) + '%';
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-let budget = [], expenses = [], tab = 'resumen', charts = [], store = null, canImg = true;
+let projects = [], curP = null, budget = [], expenses = [], tab = 'resumen', charts = [], store = null, canImg = true;
 const hoyMes = new Date().toISOString().slice(0, 7);
 
 /* ---------- parseo de números, fechas y meses (acepta lo que pega Excel) ---------- */
@@ -30,18 +30,29 @@ async function iniciarFirebase() {
   const base = 'https://www.gstatic.com/firebasejs/10.12.2/';
   const [{ initializeApp }, A, F] = await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-auth.js'), import(base + 'firebase-firestore.js')]);
   const app = initializeApp(firebaseConfig), auth = A.getAuth(app), db = F.getFirestore(app);
+  let U = null, P = null; // U = usuario logueado, P = presupuesto abierto. Cada usuario tiene los suyos: users/{U}/projects/{P}/...
+  const pc = (c, id) => id ? F.doc(db, 'users', U, 'projects', P, c, id) : F.collection(db, 'users', U, 'projects', P, c);
   return {
-    onUser: cb => A.onAuthStateChanged(auth, u => cb(u ? { email: u.email } : null)),
+    onUser: cb => A.onAuthStateChanged(auth, u => { U = u ? u.uid : null; cb(u ? { email: u.email, uid: u.uid } : null); }),
     login: (m, p) => A.signInWithEmailAndPassword(auth, m, p),
     logout: () => A.signOut(auth),
     reset: m => A.sendPasswordResetEmail(auth, m),
+    listProjects: (f, onErr) => F.onSnapshot(F.collection(db, 'users', U, 'projects'), s => f(s.docs.map(x => ({ ...x.data(), id: x.id }))), onErr),
+    newProject: async name => { const id = uid(); await F.setDoc(F.doc(db, 'users', U, 'projects', id), { name, created: Date.now() }); return id; },
+    renameProject: (id, name) => F.setDoc(F.doc(db, 'users', U, 'projects', id), { name }, { merge: true }),
+    async deleteProject(id) {
+      for (const c of ['budget', 'expenses']) { const sn = await F.getDocs(F.collection(db, 'users', U, 'projects', id, c)); await Promise.all(sn.docs.map(d => F.deleteDoc(d.ref))); }
+      await F.deleteDoc(F.doc(db, 'users', U, 'projects', id));
+    },
+    setProject: id => { P = id; },
     listen(f, onErr) {
-      const a = F.onSnapshot(F.collection(db, 'budget'), s => { budget = s.docs.map(x => ({ ...x.data(), id: x.id })); f(); }, onErr);
-      const b = F.onSnapshot(F.collection(db, 'expenses'), s => { expenses = s.docs.map(x => ({ ...x.data(), id: x.id })); f(); }, onErr);
+      const a = F.onSnapshot(pc('budget'), s => { budget = s.docs.map(x => ({ ...x.data(), id: x.id })); f(); }, onErr);
+      const b = F.onSnapshot(pc('expenses'), s => { expenses = s.docs.map(x => ({ ...x.data(), id: x.id })); f(); }, onErr);
       return () => { a(); b(); };
     },
-    set: (col, o) => { const { id, ...r } = o; return F.setDoc(F.doc(db, col, id), r); },
-    del: (col, id) => F.deleteDoc(F.doc(db, col, id)),
+    set: (col, o) => { const { id, ...r } = o; return F.setDoc(pc(col, id), r); },
+    del: (col, id) => F.deleteDoc(pc(col, id)),
+    async legacy() { const g = async c => (await F.getDocs(F.collection(db, c))).docs.map(x => ({ ...x.data(), id: x.id })); return { budget: await g('budget'), expenses: await g('expenses') }; }, // datos de la versión anterior (compartida)
   };
 }
 
@@ -234,6 +245,16 @@ function vImportar() {
       await store.set('expenses', { id: uid(), nro: Math.max(0, ...expenses.map(e => +e.nro || 0)) + 1 + n, date: fecha, desc: c[1], itemId: it.id, amount: monto, vendor: c[4] || '', voucher: c[5] || '' }); n++; }
     if (!n) return msg('#igm', 'No importé gastos nuevos.' + (sin ? ` ${sin} fila(s) con un Nro de ítem que no existe en el presupuesto.` : ''), 1);
     tab = 'gastos'; vista(); };
+  const lc = document.createElement('div'); lc.className = 'card';
+  lc.innerHTML = `<h3>Traer los datos de la versión anterior</h3><p>Antes todos trabajaban sobre un único presupuesto compartido. Este botón <b>copia</b> esos datos al presupuesto que tenés abierto ahora (no borra nada del original y, si lo tocás dos veces, no duplica).</p><button class="p" id="lcb">Copiar datos anteriores a este presupuesto</button><div class="msg" id="lcm"></div>`;
+  $('#vista').appendChild(lc);
+  $('#lcb').onclick = async () => {
+    msg('#lcm', 'Copiando…'); try {
+      const L = await store.legacy(); if (!L.budget.length && !L.expenses.length) return msg('#lcm', 'No hay datos anteriores para copiar.');
+      for (const r of L.budget) await store.set('budget', r); for (const r of L.expenses) await store.set('expenses', r);
+      msg('#lcm', `Listo: copié ${L.budget.length} ítems y ${L.expenses.length} gastos.`);
+    } catch (e) { msg('#lcm', 'No pude copiar los datos anteriores.', 1); }
+  };
 }
 
 /* ---------- EXPORTAR ---------- */
@@ -251,11 +272,35 @@ function vExportar() {
   $('#mon').value = MON; $('#mon').oninput = () => { MON = $('#mon').value; try { localStorage.setItem('mon', MON); } catch (e) { } refresco(); };
   if (firebaseConfig.apiKey === 'REEMPLAZAR') { $('#login').classList.remove('hide'); $('#lerr').textContent = 'Falta conectar Firebase: pegá tus datos en config.js (Paso 3 de la guía).'; return; }
   let fb; try { fb = await iniciarFirebase(); } catch (e) { $('#login').classList.remove('hide'); $('#lerr').textContent = 'No pude conectar con Firebase. Revisá tu internet y config.js.'; return; }
-  let stop = () => { };
+  let stop = () => { }, stopP = () => { }, creando = false, miUid = null;
+  const sinPermiso = () => { $('#aviso').textContent = 'Tu correo no tiene permiso para ver los datos. Pedile acceso al administrador.'; $('#aviso').classList.remove('hide'); };
+  const pintarProy = () => { $('#proy').innerHTML = projects.map(p => `<option value="${esc(p.id)}">${esc(p.name || 'Sin nombre')}</option>`).join(''); $('#proy').value = curP; };
+  function abrir(id) { // abre un presupuesto: carga sus datos
+    curP = id; try { localStorage.setItem('p_' + miUid, id); } catch (e) { }
+    fb.setProject(id); stop(); budget = []; expenses = []; pintarProy(); vista(); stop = fb.listen(refresco, sinPermiso);
+  }
+  function iniciarProyectos() {
+    stopP(); stopP = fb.listProjects(async list => {
+      projects = list.sort((a, b) => (a.created || 0) - (b.created || 0));
+      if (!projects.length) { if (!creando) { creando = true; try { await fb.newProject('Mi presupuesto'); } catch (e) { sinPermiso(); } creando = false; } return; }
+      if (projects.some(p => p.id === curP)) return pintarProy(); // se renombró o se creó otro: no recargar
+      let g = ''; try { g = localStorage.getItem('p_' + miUid) || ''; } catch (e) { }
+      abrir(projects.some(p => p.id === g) ? g : projects[0].id);
+    }, sinPermiso);
+  }
+  $('#proy').onchange = () => abrir($('#proy').value);
+  $('#pnuevo').onclick = async () => { const n = (prompt('Nombre del presupuesto nuevo (ej: Feedlot corrales)') || '').trim(); if (!n) return; abrir(await fb.newProject(n)); };
+  $('#pren').onclick = async () => { const p = projects.find(x => x.id === curP); if (!p) return; const n = (prompt('Nuevo nombre del presupuesto', p.name || '') || '').trim(); if (n) await fb.renameProject(curP, n); };
+  $('#pbor').onclick = async () => {
+    const p = projects.find(x => x.id === curP); if (!p) return;
+    if (projects.length < 2) return alert('Tenés que dejar al menos un presupuesto. Creá otro antes de borrar este.');
+    if (!confirm(`¿Borrar el presupuesto "${p.name}" con todos sus ítems y gastos? No se puede deshacer.`)) return;
+    stop(); await fb.deleteProject(curP);
+  };
   fb.onUser(u => {
     $('#login').classList.toggle('hide', !!u); $('#app').classList.toggle('hide', !u);
-    if (u) { store = fb; $('#quien').textContent = u.email; vista(); stop = fb.listen(refresco, () => { $('#aviso').textContent = 'Tu correo no tiene permiso para ver los datos. Pedile acceso al administrador.'; $('#aviso').classList.remove('hide'); }); }
-    else { stop(); budget = []; expenses = []; store = null; }
+    if (u) { store = fb; miUid = u.uid; $('#quien').textContent = u.email; curP = null; iniciarProyectos(); }
+    else { stop(); stopP(); budget = []; expenses = []; projects = []; curP = null; store = null; }
   });
   const entrar = async () => {
     $('#lerr').textContent = '';
